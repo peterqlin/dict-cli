@@ -7,7 +7,6 @@ type DictEntry struct {
 	Hwi  Hwi        `json:"hwi"`
 	Fl   string     `json:"fl"`   // functional label: "noun", "verb", etc.
 	Def  []DefBlock `json:"def"`
-	Et   [][]string `json:"et"`   // etymology
 	Date string     `json:"date"` // first known use
 }
 

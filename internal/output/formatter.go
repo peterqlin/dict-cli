@@ -237,49 +237,94 @@ type sense struct {
 
 // extractSenses walks the sseq structure of MW definition blocks and returns
 // flat sense label + text pairs. MW's sseq is [][][]any where each
-// leaf is ["sense", {sn, dt, ...}] or ["bs", ...] etc.
+// leaf is ["sense", {...}], ["bs", {...}], ["pseq", [...]], or ["sen", {...}].
 func extractSenses(defs []api.DefBlock) []sense {
 	var senses []sense
 	for _, block := range defs {
 		for _, sseqEntry := range block.Sseq {
 			for _, item := range sseqEntry {
-				if len(item) < 2 {
-					continue
-				}
-				tag, ok := item[0].(string)
-				if !ok {
-					continue
-				}
-				if tag != "sense" && tag != "bs" {
-					continue
-				}
-				senseObj, ok := item[1].(map[string]any)
-				if !ok {
-					continue
-				}
-
-				// If it's a "bs" (binding substitute), drill into the "sense" field.
-				if tag == "bs" {
-					inner, ok := senseObj["sense"].(map[string]any)
-					if !ok {
-						continue
-					}
-					senseObj = inner
-				}
-
-				label := ""
-				if sn, ok := senseObj["sn"].(string); ok {
-					label = sn
-				}
-
-				text := extractDt(senseObj)
-				if text != "" {
-					senses = append(senses, sense{label: label, text: text})
-				}
+				senses = append(senses, extractSenseItem(item)...)
 			}
 		}
 	}
 	return senses
+}
+
+// extractSenseItem processes a single [tag, data] item from an sseq entry.
+// Handles "sense", "bs" (binding substitute), and "pseq" (parenthesized sequence).
+// "sen" (truncated sense with no definition) and unknown tags are skipped.
+func extractSenseItem(item []any) []sense {
+	if len(item) < 2 {
+		return nil
+	}
+	tag, ok := item[0].(string)
+	if !ok {
+		return nil
+	}
+	switch tag {
+	case "sense", "bs":
+		senseObj, ok := item[1].(map[string]any)
+		if !ok {
+			return nil
+		}
+		if tag == "bs" {
+			inner, ok := senseObj["sense"].(map[string]any)
+			if !ok {
+				return nil
+			}
+			senseObj = inner
+		}
+		return parseSenseObj(senseObj)
+	case "pseq":
+		// Parenthesized sequence: data is []any of [tag, data] pairs.
+		nested, ok := item[1].([]any)
+		if !ok {
+			return nil
+		}
+		var out []sense
+		for _, ni := range nested {
+			nItem, ok := ni.([]any)
+			if !ok {
+				continue
+			}
+			out = append(out, extractSenseItem(nItem)...)
+		}
+		return out
+	}
+	return nil
+}
+
+// parseSenseObj extracts senses from a decoded MW sense object. If a divided
+// sense (sdsense) is present — e.g. "especially X" — it is appended inline
+// to the main definition separated by a semicolon.
+func parseSenseObj(senseObj map[string]any) []sense {
+	label := ""
+	if sn, ok := senseObj["sn"].(string); ok {
+		label = sn
+	}
+
+	text := extractDt(senseObj)
+
+	// Append sdsense (divided sense: "especially", "also", "broadly", etc.)
+	if sds, ok := senseObj["sdsense"].(map[string]any); ok {
+		sdText := extractDt(sds)
+		if sdText != "" {
+			sd := "also"
+			if sdStr, ok := sds["sd"].(string); ok {
+				sd = sdStr
+			}
+			if text != "" {
+				text = text + "; " + sd + " " + sdText
+			} else {
+				text = sd + " " + sdText
+			}
+		}
+	}
+
+	if text == "" {
+		return nil
+	}
+	return []sense{{label: label, text: text}}
 }
 
 // extractDt pulls the defining text from a sense object's "dt" field.
