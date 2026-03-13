@@ -21,20 +21,44 @@ const (
 // mwMarkup strips MW inline markup tokens like {bc}, {it}, {b}, {ldquo}, etc.
 var mwMarkup = regexp.MustCompile(`\{[^}]+\}`)
 
+// extractTokenText returns the display text embedded in a MW cross-reference
+// token of the form {tag|text|...}. Returns "" for tokens without a pipe.
+func extractTokenText(token string) string {
+	// strip surrounding braces
+	inner := token[1 : len(token)-1]
+	idx := strings.Index(inner, "|")
+	if idx < 0 {
+		return ""
+	}
+	// text is between first and second pipe (or end)
+	rest := inner[idx+1:]
+	end := strings.Index(rest, "|")
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
+}
+
 func cleanMarkup(s string) string {
 	s = mwMarkup.ReplaceAllStringFunc(s, func(m string) string {
-		switch m {
-		case "{bc}":
+		switch {
+		case m == "{bc}":
 			return ": "
-		case "{ldquo}":
+		case m == "{ldquo}":
 			return "\""
-		case "{rdquo}":
+		case m == "{rdquo}":
 			return "\""
+		// Cross-reference tokens: {sx|word||}, {a_link|word}, {d_link|word|id}, etc.
+		// The display text is always the first segment after the opening pipe.
+		case strings.Contains(m, "|"):
+			return extractTokenText(m)
 		default:
 			return ""
 		}
 	})
-	return strings.TrimSpace(s)
+	// Collapse any double-spaces left by stripped tokens and trim.
+	s = strings.Join(strings.Fields(s), " ")
+	return s
 }
 
 // headword returns the cleaned headword for an entry (stress markers removed).

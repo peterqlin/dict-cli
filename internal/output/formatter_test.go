@@ -41,6 +41,34 @@ func TestCleanMarkup_Trim(t *testing.T) {
 	}
 }
 
+func TestCleanMarkup_CrossReference(t *testing.T) {
+	// {sx|word||} is the "see also" token used by MW for cross-references
+	got := cleanMarkup("{bc}{sx|inferior||}, {sx|trashy||}")
+	if !strings.Contains(got, "inferior") {
+		t.Errorf("expected {sx|inferior||} to render as 'inferior', got %q", got)
+	}
+	if !strings.Contains(got, "trashy") {
+		t.Errorf("expected {sx|trashy||} to render as 'trashy', got %q", got)
+	}
+	if strings.Contains(got, "{") {
+		t.Errorf("expected no remaining markup tokens, got %q", got)
+	}
+}
+
+func TestCleanMarkup_ALink(t *testing.T) {
+	got := cleanMarkup("{a_link|serendipity}")
+	if got != "serendipity" {
+		t.Errorf("expected 'serendipity', got %q", got)
+	}
+}
+
+func TestCleanMarkup_DLink(t *testing.T) {
+	got := cleanMarkup("{d_link|word|entry:1}")
+	if got != "word" {
+		t.Errorf("expected 'word', got %q", got)
+	}
+}
+
 // ---- helpers for building test fixtures ----
 
 func makeDictEntry(hw, fl, sn, defText, date string) api.DictEntry {
