@@ -174,6 +174,65 @@ func TestPrintDefinitions_SkipsPhraseEntries(t *testing.T) {
 	}
 }
 
+func TestPrintDefinitions_MultiWordPhrase(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntry("spill the beans", "verb phrase", "1", "to reveal secret information", ""),
+		makeDictEntry("spill", "verb", "1", "to cause to fall or flow", ""), // unrelated single-word entry
+	}
+	var b strings.Builder
+	PrintDefinitions(&b, "spill the beans", entries, 5, FormatPlain)
+	out := b.String()
+	if !strings.Contains(out, "spill the beans") {
+		t.Errorf("phrase entry should appear when searching for the phrase, got:\n%s", out)
+	}
+	if !strings.Contains(out, "reveal secret information") {
+		t.Errorf("phrase definition should appear, got:\n%s", out)
+	}
+	if strings.Contains(out, "spill (verb)") {
+		t.Errorf("unrelated single-word entry should be filtered, got:\n%s", out)
+	}
+}
+
+func TestPrintSynonyms_MultiWordPhrase(t *testing.T) {
+	entries := []api.ThesEntry{
+		makeThesEntry("spill the beans", "verb phrase",
+			[][]string{{"let the cat out of the bag", "give away"}},
+			nil,
+		),
+		makeThesEntry("spill", "verb", [][]string{{"pour", "shed"}}, nil),
+	}
+	var b strings.Builder
+	PrintSynonyms(&b, "spill the beans", entries, FormatPlain)
+	out := b.String()
+	if !strings.Contains(out, `Synonyms for "spill the beans"`) {
+		t.Errorf("expected phrase header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "let the cat out of the bag") {
+		t.Errorf("expected phrase synonyms, got:\n%s", out)
+	}
+	if strings.Contains(out, "pour") {
+		t.Errorf("unrelated single-word entry should be filtered, got:\n%s", out)
+	}
+}
+
+func TestPrintAntonyms_MultiWordPhrase(t *testing.T) {
+	entries := []api.ThesEntry{
+		makeThesEntry("spill the beans", "verb phrase",
+			nil,
+			[][]string{{"keep secret", "cover up"}},
+		),
+	}
+	var b strings.Builder
+	PrintAntonyms(&b, "spill the beans", entries, FormatPlain)
+	out := b.String()
+	if !strings.Contains(out, `Antonyms for "spill the beans"`) {
+		t.Errorf("expected phrase header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "keep secret") {
+		t.Errorf("expected phrase antonyms, got:\n%s", out)
+	}
+}
+
 func TestPrintDefinitions_SkipsEntriesWithNoFl(t *testing.T) {
 	entries := []api.DictEntry{
 		{Hwi: api.Hwi{Hw: "test"}, Fl: "", Def: nil},

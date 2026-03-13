@@ -133,3 +133,21 @@ func TestGet_URLConstruction(t *testing.T) {
 		t.Errorf("URL path = %q, want %q", gotPath, want)
 	}
 }
+
+func TestGet_MultiWordPhraseURLEncoded(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.String()
+		w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv)
+	var entries []DictEntry
+	c.get("collegiate", "spill the beans", "mykey", &entries)
+
+	want := "/collegiate/json/spill%20the%20beans?key=mykey"
+	if gotPath != want {
+		t.Errorf("URL path = %q, want %q", gotPath, want)
+	}
+}

@@ -162,6 +162,57 @@ func TestAnt_Success(t *testing.T) {
 	}
 }
 
+// ---- multi-word phrase queries ----
+
+func TestDef_MultiWordPhrase(t *testing.T) {
+	body := `[{"meta":{"id":"spill the beans","stems":["spill the beans"],"offensive":false},"hwi":{"hw":"spill the beans"},"fl":"verb phrase","def":[{"sseq":[[["sense",{"sn":"1","dt":[["text","to reveal secret information"]]}]]]}],"et":[],"date":""}]`
+	_, cleanup := setupMockServer(t, body)
+	defer cleanup()
+
+	out, err := executeCmd(testCfg(), []string{"def", "spill", "the", "beans"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "reveal secret information") {
+		t.Errorf("expected phrase definition in output, got:\n%s", out)
+	}
+}
+
+func TestSyn_MultiWordPhrase(t *testing.T) {
+	body := `[{"meta":{"id":"spill the beans","syns":[["let the cat out of the bag"]],"ants":[],"offensive":false},"hwi":{"hw":"spill the beans"},"fl":"verb phrase","def":[]}]`
+	_, cleanup := setupMockServer(t, body)
+	defer cleanup()
+
+	out, err := executeCmd(testCfg(), []string{"syn", "spill", "the", "beans"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "let the cat out of the bag") {
+		t.Errorf("expected phrase synonym in output, got:\n%s", out)
+	}
+}
+
+func TestAnt_MultiWordPhrase(t *testing.T) {
+	body := `[{"meta":{"id":"spill the beans","syns":[],"ants":[["keep secret"]],"offensive":false},"hwi":{"hw":"spill the beans"},"fl":"verb phrase","def":[]}]`
+	_, cleanup := setupMockServer(t, body)
+	defer cleanup()
+
+	out, err := executeCmd(testCfg(), []string{"ant", "spill", "the", "beans"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "keep secret") {
+		t.Errorf("expected phrase antonym in output, got:\n%s", out)
+	}
+}
+
+func TestDef_NoArgsError(t *testing.T) {
+	_, err := executeCmd(testCfg(), []string{"def"})
+	if err == nil {
+		t.Fatal("expected error for missing word argument")
+	}
+}
+
 // ---- --json flag ----
 
 func TestDef_JSONFlag(t *testing.T) {

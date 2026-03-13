@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -37,8 +38,8 @@ func (c *Client) SetBaseURL(url string) {
 // get performs a GET to the MW API and decodes JSON into dest (must be a pointer).
 // MW returns HTTP 200 with a []string of suggestions when a word is not found,
 // so this method probes the raw JSON before decoding into the target type.
-func (c *Client) get(ref, word, apiKey string, dest interface{}) error {
-	url := fmt.Sprintf("%s/%s/json/%s?key=%s", c.baseURL, ref, word, apiKey)
+func (c *Client) get(ref, word, apiKey string, dest any) error {
+	url := fmt.Sprintf("%s/%s/json/%s?key=%s", c.baseURL, ref, url.PathEscape(word), apiKey)
 
 	resp, err := c.http.Get(url)
 	if err != nil {
