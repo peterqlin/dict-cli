@@ -68,12 +68,24 @@ func makeDictEntry(hw, fl, sn, defText, date string) api.DictEntry {
 	}
 }
 
+func makeDictEntryWithStems(hw, fl, sn, defText string, stems []string) api.DictEntry {
+	e := makeDictEntry(hw, fl, sn, defText, "")
+	e.Meta.Stems = stems
+	return e
+}
+
 func makeThesEntry(hw, fl string, syns, ants [][]string) api.ThesEntry {
 	return api.ThesEntry{
 		Hwi:  api.Hwi{Hw: hw},
 		Fl:   fl,
 		Meta: api.ThesMeta{Syns: syns, Ants: ants},
 	}
+}
+
+func makeThesEntryWithStems(hw, fl string, syns, ants [][]string, stems []string) api.ThesEntry {
+	e := makeThesEntry(hw, fl, syns, ants)
+	e.Meta.Stems = stems
+	return e
 }
 
 // ---- PrintDefinitions ----
@@ -230,6 +242,109 @@ func TestPrintAntonyms_MultiWordPhrase(t *testing.T) {
 	}
 	if !strings.Contains(out, "keep secret") {
 		t.Errorf("expected phrase antonyms, got:\n%s", out)
+	}
+}
+
+// ---- matchesWord / stem fallback ----
+
+func TestMatchesWord_ExactHeadword(t *testing.T) {
+	if !matchesWord("run", nil, "run") {
+		t.Error("exact headword should match")
+	}
+}
+
+func TestMatchesWord_StressMarkers(t *testing.T) {
+	if !matchesWord("nu*cle*ate", nil, "nucleate") {
+		t.Error("headword with stress markers should match after stripping")
+	}
+}
+
+func TestMatchesWord_StemFallback(t *testing.T) {
+	stems := []string{"nucleate", "nucleates", "nucleated", "nucleating"}
+	if !matchesWord("nu*cle*ate", stems, "nucleating") {
+		t.Error("inflected form should match via stems")
+	}
+}
+
+func TestMatchesWord_NoMatch(t *testing.T) {
+	stems := []string{"nucleate", "nucleating"}
+	if matchesWord("nu*cle*ate", stems, "run") {
+		t.Error("unrelated word should not match")
+	}
+}
+
+func TestMatchesWord_CaseInsensitive(t *testing.T) {
+	if !matchesWord("Run", nil, "run") {
+		t.Error("headword match should be case-insensitive")
+	}
+	if !matchesWord("nucleate", []string{"Nucleating"}, "nucleating") {
+		t.Error("stem match should be case-insensitive")
+	}
+}
+
+func TestPrintDefinitions_StemFallback(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntryWithStems("nu*cle*ate", "verb", "1", "to form a nucleus",
+			[]string{"nucleate", "nucleates", "nucleated", "nucleating"}),
+	}
+	var b strings.Builder
+	PrintDefinitions(&b, "nucleating", entries, 5, FormatPlain)
+	out := b.String()
+	if !strings.Contains(out, `Showing results for "nucleate"`) {
+		t.Errorf("expected stem fallback note, got:\n%s", out)
+	}
+	if !strings.Contains(out, "nucleate (verb)") {
+		t.Errorf("expected base entry in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "form a nucleus") {
+		t.Errorf("expected definition text, got:\n%s", out)
+	}
+}
+
+func TestPrintDefinitions_ExactMatchNoNote(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntryWithStems("run", "verb", "1", "to go faster than a walk",
+			[]string{"run", "runs", "ran", "running"}),
+	}
+	var b strings.Builder
+	PrintDefinitions(&b, "run", entries, 5, FormatPlain)
+	out := b.String()
+	if strings.Contains(out, "Showing results for") {
+		t.Errorf("exact match should not show stem fallback note, got:\n%s", out)
+	}
+}
+
+func TestPrintSynonyms_StemFallback(t *testing.T) {
+	entries := []api.ThesEntry{
+		makeThesEntryWithStems("happy", "adjective",
+			[][]string{{"glad", "joyful"}}, nil,
+			[]string{"happy", "happier", "happiest", "happily", "happiness"}),
+	}
+	var b strings.Builder
+	PrintSynonyms(&b, "happily", entries, FormatPlain)
+	out := b.String()
+	if !strings.Contains(out, `Showing results for "happy"`) {
+		t.Errorf("expected stem fallback note, got:\n%s", out)
+	}
+	if !strings.Contains(out, "glad") {
+		t.Errorf("expected synonyms in output, got:\n%s", out)
+	}
+}
+
+func TestPrintAntonyms_StemFallback(t *testing.T) {
+	entries := []api.ThesEntry{
+		makeThesEntryWithStems("happy", "adjective",
+			nil, [][]string{{"sad", "unhappy"}},
+			[]string{"happy", "happier", "happiest", "happily"}),
+	}
+	var b strings.Builder
+	PrintAntonyms(&b, "happily", entries, FormatPlain)
+	out := b.String()
+	if !strings.Contains(out, `Showing results for "happy"`) {
+		t.Errorf("expected stem fallback note, got:\n%s", out)
+	}
+	if !strings.Contains(out, "sad") {
+		t.Errorf("expected antonyms in output, got:\n%s", out)
 	}
 }
 

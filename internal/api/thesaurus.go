@@ -14,6 +14,7 @@ type ThesMeta struct {
 	ID        string     `json:"id"`
 	Syns      [][]string `json:"syns"`
 	Ants      [][]string `json:"ants"`
+	Stems     []string   `json:"stems"`
 	Offensive bool       `json:"offensive"`
 }
 

@@ -42,11 +42,20 @@ func headword(hw string) string {
 	return strings.ReplaceAll(hw, "*", "")
 }
 
-// isExactMatch reports whether the entry headword matches the searched word.
-// This filters out derived phrases and compounds (e.g. searching "run" should
-// exclude "run a fever" or "run-and-gun").
-func isExactMatch(hw, word string) bool {
-	return strings.EqualFold(headword(hw), word)
+// matchesWord reports whether an entry is relevant to the searched word.
+// It first checks the headword directly (to filter unrelated phrases/compounds),
+// then falls back to the stems list to handle inflected forms — e.g. searching
+// "nucleating" matches the "nucleate" entry because "nucleating" is in its stems.
+func matchesWord(hw string, stems []string, word string) bool {
+	if strings.EqualFold(headword(hw), word) {
+		return true
+	}
+	for _, stem := range stems {
+		if strings.EqualFold(stem, word) {
+			return true
+		}
+	}
+	return false
 }
 
 // PrintDefinitions renders dictionary entries for word to w.
@@ -55,20 +64,38 @@ func PrintDefinitions(w io.Writer, word string, entries []api.DictEntry, maxDefs
 		return printJSON(w, entries)
 	}
 
-	defCount := 0
+	// Collect matching entries and detect whether we fell back to stem matching.
+	type match struct {
+		entry      api.DictEntry
+		stemMatch  bool
+	}
+	var matches []match
 	for _, e := range entries {
-		if e.Fl == "" || !isExactMatch(e.Hwi.Hw, word) {
+		if e.Fl == "" || !matchesWord(e.Hwi.Hw, e.Meta.Stems, word) {
 			continue
 		}
-
-		senses := extractSenses(e.Def)
-		if len(senses) == 0 {
+		if len(extractSenses(e.Def)) == 0 {
 			continue
 		}
+		isStem := !strings.EqualFold(headword(e.Hwi.Hw), word)
+		matches = append(matches, match{e, isStem})
+	}
 
+	if len(matches) == 0 {
+		fmt.Fprintln(w, "No definitions found.")
+		return nil
+	}
+
+	// If every result came from stem matching, show what we resolved to.
+	if matches[0].stemMatch {
+		fmt.Fprintf(w, "(Showing results for %q)\n", headword(matches[0].entry.Hwi.Hw))
+	}
+
+	for _, m := range matches {
+		e := m.entry
 		fmt.Fprintf(w, "\n%s (%s)\n", headword(e.Hwi.Hw), e.Fl)
 		printed := 0
-		for _, s := range senses {
+		for _, s := range extractSenses(e.Def) {
 			if maxDefs > 0 && printed >= maxDefs {
 				break
 			}
@@ -79,12 +106,6 @@ func PrintDefinitions(w io.Writer, word string, entries []api.DictEntry, maxDefs
 			}
 			fmt.Fprintf(w, "  %s. %s\n", label, s.text)
 		}
-
-		defCount++
-	}
-
-	if defCount == 0 {
-		fmt.Fprintln(w, "No definitions found.")
 	}
 	return nil
 }
@@ -96,12 +117,20 @@ func PrintSynonyms(w io.Writer, word string, entries []api.ThesEntry, format For
 	}
 
 	found := false
+	stemFallbackNote := false
 	for _, e := range entries {
-		if len(e.Meta.Syns) == 0 || !isExactMatch(e.Hwi.Hw, word) {
+		if len(e.Meta.Syns) == 0 || !matchesWord(e.Hwi.Hw, e.Meta.Stems, word) {
 			continue
+		}
+		if !found && !strings.EqualFold(headword(e.Hwi.Hw), word) {
+			stemFallbackNote = true
 		}
 		found = true
 		hw := headword(e.Hwi.Hw)
+		if stemFallbackNote {
+			fmt.Fprintf(w, "(Showing results for %q)\n", hw)
+			stemFallbackNote = false
+		}
 		fl := ""
 		if e.Fl != "" {
 			fl = fmt.Sprintf(" (%s)", e.Fl)
@@ -132,12 +161,20 @@ func PrintAntonyms(w io.Writer, word string, entries []api.ThesEntry, format For
 	}
 
 	found := false
+	stemFallbackNote := false
 	for _, e := range entries {
-		if len(e.Meta.Ants) == 0 || !isExactMatch(e.Hwi.Hw, word) {
+		if len(e.Meta.Ants) == 0 || !matchesWord(e.Hwi.Hw, e.Meta.Stems, word) {
 			continue
+		}
+		if !found && !strings.EqualFold(headword(e.Hwi.Hw), word) {
+			stemFallbackNote = true
 		}
 		found = true
 		hw := headword(e.Hwi.Hw)
+		if stemFallbackNote {
+			fmt.Fprintf(w, "(Showing results for %q)\n", hw)
+			stemFallbackNote = false
+		}
 		fl := ""
 		if e.Fl != "" {
 			fl = fmt.Sprintf(" (%s)", e.Fl)
