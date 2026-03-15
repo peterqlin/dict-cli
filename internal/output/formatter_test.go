@@ -574,6 +574,301 @@ func TestPrintAntonyms_JSON(t *testing.T) {
 	}
 }
 
+// ---- PrintExamples ----
+
+// makeDictEntryWithVis builds an entry whose single sense has both definition
+// text and one or more verbal illustrations ("vis").
+func makeDictEntryWithVis(hw, fl string, stems []string, defText string, examples []string) api.DictEntry {
+	visItems := make([]any, len(examples))
+	for i, ex := range examples {
+		visItems[i] = map[string]any{"t": ex}
+	}
+	dt := []any{
+		[]any{"text", defText},
+		[]any{"vis", visItems},
+	}
+	return api.DictEntry{
+		Meta: api.DictMeta{Stems: stems},
+		Hwi:  api.Hwi{Hw: hw},
+		Fl:   fl,
+		Def: []api.DefBlock{
+			{
+				Sseq: [][][]any{
+					{
+						{
+							"sense",
+							map[string]any{
+								"sn": "1",
+								"dt": dt,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestPrintExamples_Basic(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntryWithVis("test", "noun", nil, "{bc}a means of testing",
+			[]string{"the {it}test{/it} was difficult", "she passed the test"}),
+	}
+	var b strings.Builder
+	if err := PrintExamples(&b, "test", entries, FormatPlain); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "test (noun)") {
+		t.Errorf("expected header 'test (noun)', got:\n%s", out)
+	}
+	if !strings.Contains(out, "the test was difficult") {
+		t.Errorf("expected first example with markup stripped, got:\n%s", out)
+	}
+	if !strings.Contains(out, "she passed the test") {
+		t.Errorf("expected second example, got:\n%s", out)
+	}
+	if strings.Contains(out, "{it}") {
+		t.Errorf("expected markup tokens stripped, got:\n%s", out)
+	}
+}
+
+func TestPrintExamples_NoExamples(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntry("test", "noun", "1", "{bc}a means of testing", ""),
+	}
+	var b strings.Builder
+	PrintExamples(&b, "test", entries, FormatPlain)
+	if !strings.Contains(b.String(), "No example usage found") {
+		t.Errorf("expected 'No example usage found', got: %q", b.String())
+	}
+}
+
+func TestPrintExamples_EmptyEntries(t *testing.T) {
+	var b strings.Builder
+	PrintExamples(&b, "test", []api.DictEntry{}, FormatPlain)
+	if !strings.Contains(b.String(), "No example usage found") {
+		t.Errorf("expected 'No example usage found' for empty slice, got: %q", b.String())
+	}
+}
+
+func TestPrintExamples_StripMarkup(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntryWithVis("run", "verb", nil, "",
+			[]string{"he {it}ran{/it} {ldquo}quickly{rdquo} away"}),
+	}
+	var b strings.Builder
+	PrintExamples(&b, "run", entries, FormatPlain)
+	out := b.String()
+	if strings.Contains(out, "{it}") || strings.Contains(out, "{ldquo}") {
+		t.Errorf("markup tokens should be stripped, got:\n%s", out)
+	}
+	if !strings.Contains(out, "ran") {
+		t.Errorf("expected 'ran' after stripping {it} tags, got:\n%s", out)
+	}
+	if !strings.Contains(out, `"quickly"`) {
+		t.Errorf("expected quote marks from ldquo/rdquo, got:\n%s", out)
+	}
+}
+
+func TestPrintExamples_StemFallback(t *testing.T) {
+	stems := []string{"run", "runs", "ran", "running"}
+	entries := []api.DictEntry{
+		makeDictEntryWithVis("run", "verb", stems, "",
+			[]string{"she runs every morning"}),
+	}
+	var b strings.Builder
+	PrintExamples(&b, "running", entries, FormatPlain)
+	out := b.String()
+	if !strings.Contains(out, `Showing results for "run"`) {
+		t.Errorf("expected stem fallback note, got:\n%s", out)
+	}
+	if !strings.Contains(out, "she runs every morning") {
+		t.Errorf("expected example in output, got:\n%s", out)
+	}
+}
+
+func TestPrintExamples_FiltersMismatch(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntryWithVis("run", "verb", nil, "", []string{"she ran fast"}),
+		makeDictEntryWithVis("run-down", "adjective", nil, "", []string{"a run-down house"}),
+	}
+	var b strings.Builder
+	PrintExamples(&b, "run", entries, FormatPlain)
+	out := b.String()
+	if strings.Contains(out, "run-down") {
+		t.Errorf("compound entry should be filtered, got:\n%s", out)
+	}
+	if !strings.Contains(out, "she ran fast") {
+		t.Errorf("exact match example should appear, got:\n%s", out)
+	}
+}
+
+func TestPrintExamples_MultiWordPhrase(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntryWithVis("spill the beans", "verb phrase", nil, "",
+			[]string{"he spilled the beans about the surprise party"}),
+		makeDictEntryWithVis("spill", "verb", nil, "", []string{"she spilled the milk"}),
+	}
+	var b strings.Builder
+	PrintExamples(&b, "spill the beans", entries, FormatPlain)
+	out := b.String()
+	if !strings.Contains(out, "spill the beans (verb phrase)") {
+		t.Errorf("expected phrase entry header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "surprise party") {
+		t.Errorf("expected phrase example, got:\n%s", out)
+	}
+	if strings.Contains(out, "she spilled the milk") {
+		t.Errorf("unrelated single-word entry should be filtered, got:\n%s", out)
+	}
+}
+
+func TestPrintExamples_JSON(t *testing.T) {
+	entries := []api.DictEntry{
+		makeDictEntryWithVis("run", "verb", nil, "", []string{"she ran fast"}),
+	}
+	var b strings.Builder
+	if err := PrintExamples(&b, "run", entries, FormatJSON); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var decoded []api.DictEntry
+	if err := json.Unmarshal([]byte(b.String()), &decoded); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, b.String())
+	}
+}
+
+func TestPrintExamples_SkipsEntriesWithNoFl(t *testing.T) {
+	entries := []api.DictEntry{
+		{Hwi: api.Hwi{Hw: "test"}, Fl: "", Def: nil},
+	}
+	var b strings.Builder
+	PrintExamples(&b, "test", entries, FormatPlain)
+	if !strings.Contains(b.String(), "No example usage found") {
+		t.Errorf("expected 'No example usage found' for entry with empty Fl, got: %q", b.String())
+	}
+}
+
+// ---- extractExamplesFromDefs / extractVis ----
+
+func TestExtractVis_Basic(t *testing.T) {
+	sense := map[string]any{
+		"dt": []any{
+			[]any{"text", "{bc}a definition"},
+			[]any{"vis", []any{
+				map[string]any{"t": "an example sentence"},
+			}},
+		},
+	}
+	got := extractVis(sense)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 example, got %d", len(got))
+	}
+	if got[0] != "an example sentence" {
+		t.Errorf("got %q, want \"an example sentence\"", got[0])
+	}
+}
+
+func TestExtractVis_MultipleExamples(t *testing.T) {
+	sense := map[string]any{
+		"dt": []any{
+			[]any{"vis", []any{
+				map[string]any{"t": "first example"},
+				map[string]any{"t": "second example"},
+			}},
+		},
+	}
+	got := extractVis(sense)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 examples, got %d", len(got))
+	}
+}
+
+func TestExtractVis_NoVis(t *testing.T) {
+	sense := map[string]any{
+		"dt": []any{
+			[]any{"text", "{bc}just a definition"},
+		},
+	}
+	got := extractVis(sense)
+	if len(got) != 0 {
+		t.Errorf("expected no examples when dt has only text, got %d", len(got))
+	}
+}
+
+func TestExtractVis_NoDt(t *testing.T) {
+	sense := map[string]any{"sn": "1"}
+	got := extractVis(sense)
+	if len(got) != 0 {
+		t.Errorf("expected no examples for sense with no dt, got %d", len(got))
+	}
+}
+
+func TestExtractExamplesFromDefs_MultipleSenses(t *testing.T) {
+	defs := []api.DefBlock{
+		{
+			Sseq: [][][]any{
+				{
+					{
+						"sense",
+						map[string]any{
+							"dt": []any{
+								[]any{"vis", []any{map[string]any{"t": "first sense example"}}},
+							},
+						},
+					},
+				},
+				{
+					{
+						"sense",
+						map[string]any{
+							"dt": []any{
+								[]any{"vis", []any{map[string]any{"t": "second sense example"}}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	got := extractExamplesFromDefs(defs)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 examples from 2 senses, got %d", len(got))
+	}
+}
+
+func TestExtractExamplesFromDefs_PseqVis(t *testing.T) {
+	// pseq (parenthesized sequence) can also contain senses with vis
+	defs := []api.DefBlock{
+		{
+			Sseq: [][][]any{
+				{
+					{
+						"pseq",
+						[]any{
+							[]any{
+								"sense",
+								map[string]any{
+									"dt": []any{
+										[]any{"vis", []any{map[string]any{"t": "pseq example"}}},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	got := extractExamplesFromDefs(defs)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 example from pseq sense, got %d", len(got))
+	}
+	if got[0] != "pseq example" {
+		t.Errorf("got %q, want \"pseq example\"", got[0])
+	}
+}
+
 // ---- extractSenses ----
 
 func TestExtractSenses_BasicSense(t *testing.T) {

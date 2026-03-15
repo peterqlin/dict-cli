@@ -213,6 +213,101 @@ func TestDef_NoArgsError(t *testing.T) {
 	}
 }
 
+// ---- use command ----
+
+func TestUse_MissingAPIKey(t *testing.T) {
+	_, err := executeCmd(&config.Config{APIKeyDict: "", MaxDefinitions: 5}, []string{"use", "test"})
+	if err == nil {
+		t.Fatal("expected error for missing dict API key")
+	}
+	if !strings.Contains(err.Error(), "API key") {
+		t.Errorf("error should mention API key, got: %v", err)
+	}
+}
+
+func TestUse_WrongArgCount(t *testing.T) {
+	_, err := executeCmd(testCfg(), []string{"use"})
+	if err == nil {
+		t.Fatal("expected error for missing word argument")
+	}
+}
+
+func TestUse_WordNotFound(t *testing.T) {
+	_, cleanup := setupMockServer(t, `["running","runner"]`)
+	defer cleanup()
+
+	_, err := executeCmd(testCfg(), []string{"use", "runn"})
+	if err == nil {
+		t.Fatal("expected error for word not found")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestUse_Success(t *testing.T) {
+	body := `[{"meta":{"id":"test:1","stems":["test"],"offensive":false},"hwi":{"hw":"test"},"fl":"noun","def":[{"sseq":[[["sense",{"sn":"1","dt":[["text","{bc}a means of testing"],["vis",[{"t":"the {it}test{/it} was easy"}]]]}]]]}]}]`
+	_, cleanup := setupMockServer(t, body)
+	defer cleanup()
+
+	out, err := executeCmd(testCfg(), []string{"use", "test"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "test (noun)") {
+		t.Errorf("expected header 'test (noun)', got:\n%s", out)
+	}
+	if !strings.Contains(out, "the test was easy") {
+		t.Errorf("expected example with markup stripped, got:\n%s", out)
+	}
+}
+
+func TestUse_NoExamples(t *testing.T) {
+	// Entry exists but has no vis items in dt
+	body := `[{"meta":{"id":"test:1","stems":["test"],"offensive":false},"hwi":{"hw":"test"},"fl":"noun","def":[{"sseq":[[["sense",{"sn":"1","dt":[["text","{bc}a means of testing"]]}]]]}]}]`
+	_, cleanup := setupMockServer(t, body)
+	defer cleanup()
+
+	out, err := executeCmd(testCfg(), []string{"use", "test"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "No example usage found") {
+		t.Errorf("expected 'No example usage found', got:\n%s", out)
+	}
+}
+
+func TestUse_MultiWordPhrase(t *testing.T) {
+	body := `[{"meta":{"id":"spill the beans","stems":["spill the beans"],"offensive":false},"hwi":{"hw":"spill the beans"},"fl":"verb phrase","def":[{"sseq":[[["sense",{"sn":"1","dt":[["text","{bc}to reveal secret information"],["vis",[{"t":"he spilled the beans about the party"}]]]}]]]}]}]`
+	_, cleanup := setupMockServer(t, body)
+	defer cleanup()
+
+	out, err := executeCmd(testCfg(), []string{"use", "spill", "the", "beans"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "spill the beans") {
+		t.Errorf("expected phrase in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "he spilled the beans about the party") {
+		t.Errorf("expected example sentence, got:\n%s", out)
+	}
+}
+
+func TestUse_JSONFlag(t *testing.T) {
+	body := `[{"meta":{"id":"test:1","stems":["test"],"offensive":false},"hwi":{"hw":"test"},"fl":"noun","def":[{"sseq":[[["sense",{"sn":"1","dt":[["text","{bc}a means of testing"],["vis",[{"t":"a simple test"}]]]}]]]}]}]`
+	_, cleanup := setupMockServer(t, body)
+	defer cleanup()
+
+	out, err := executeCmd(testCfg(), []string{"--json", "use", "test"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(out), "[") {
+		t.Errorf("expected JSON array output, got:\n%s", out)
+	}
+}
+
 // ---- --json flag ----
 
 func TestDef_JSONFlag(t *testing.T) {

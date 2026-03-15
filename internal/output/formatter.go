@@ -327,6 +327,142 @@ func parseSenseObj(senseObj map[string]any) []sense {
 	return []sense{{label: label, text: text}}
 }
 
+// PrintExamples renders verbal illustration (example usage) sentences for word to w.
+// Examples are sourced from the collegiate dictionary API, not the thesaurus.
+func PrintExamples(w io.Writer, word string, entries []api.DictEntry, format Format) error {
+	if format == FormatJSON {
+		return printJSON(w, entries)
+	}
+
+	type exEntry struct {
+		hw       string
+		fl       string
+		stemMatch bool
+		examples []string
+	}
+	var matches []exEntry
+	for _, e := range entries {
+		if e.Fl == "" || !matchesWord(e.Hwi.Hw, e.Meta.Stems, word) {
+			continue
+		}
+		exs := extractExamplesFromDefs(e.Def)
+		if len(exs) == 0 {
+			continue
+		}
+		isStem := !strings.EqualFold(headword(e.Hwi.Hw), word)
+		matches = append(matches, exEntry{headword(e.Hwi.Hw), e.Fl, isStem, exs})
+	}
+
+	if len(matches) == 0 {
+		fmt.Fprintf(w, "No example usage found for \"%s\".\n", word)
+		return nil
+	}
+
+	if matches[0].stemMatch {
+		fmt.Fprintf(w, "(Showing results for %q)\n", matches[0].hw)
+	}
+
+	for _, m := range matches {
+		fmt.Fprintf(w, "\n%s (%s):\n", m.hw, m.fl)
+		for i, ex := range m.examples {
+			fmt.Fprintf(w, "  %d. %s\n", i+1, ex)
+		}
+	}
+	return nil
+}
+
+// extractExamplesFromDefs walks the sseq structure of MW definition blocks and
+// returns all verbal illustration ("vis") texts across all senses.
+func extractExamplesFromDefs(defs []api.DefBlock) []string {
+	var out []string
+	for _, block := range defs {
+		for _, sseqEntry := range block.Sseq {
+			for _, item := range sseqEntry {
+				out = append(out, extractExamplesFromItem(item)...)
+			}
+		}
+	}
+	return out
+}
+
+// extractExamplesFromItem mirrors extractSenseItem but collects vis texts.
+func extractExamplesFromItem(item []any) []string {
+	if len(item) < 2 {
+		return nil
+	}
+	tag, ok := item[0].(string)
+	if !ok {
+		return nil
+	}
+	switch tag {
+	case "sense", "bs":
+		senseObj, ok := item[1].(map[string]any)
+		if !ok {
+			return nil
+		}
+		if tag == "bs" {
+			inner, ok := senseObj["sense"].(map[string]any)
+			if !ok {
+				return nil
+			}
+			senseObj = inner
+		}
+		return extractVis(senseObj)
+	case "pseq":
+		nested, ok := item[1].([]any)
+		if !ok {
+			return nil
+		}
+		var out []string
+		for _, ni := range nested {
+			nItem, ok := ni.([]any)
+			if !ok {
+				continue
+			}
+			out = append(out, extractExamplesFromItem(nItem)...)
+		}
+		return out
+	}
+	return nil
+}
+
+// extractVis pulls verbal illustration texts from a sense object's "dt" field.
+// Each vis item has the shape {"t": "example sentence", "aq": {...}}.
+func extractVis(senseObj map[string]any) []string {
+	dtRaw, ok := senseObj["dt"]
+	if !ok {
+		return nil
+	}
+	dt, ok := dtRaw.([]any)
+	if !ok {
+		return nil
+	}
+
+	var out []string
+	for _, item := range dt {
+		pair, ok := item.([]any)
+		if !ok || len(pair) < 2 || pair[0] != "vis" {
+			continue
+		}
+		visList, ok := pair[1].([]any)
+		if !ok {
+			continue
+		}
+		for _, v := range visList {
+			vObj, ok := v.(map[string]any)
+			if !ok {
+				continue
+			}
+			t, ok := vObj["t"].(string)
+			if !ok || t == "" {
+				continue
+			}
+			out = append(out, cleanMarkup(t))
+		}
+	}
+	return out
+}
+
 // extractDt pulls the defining text from a sense object's "dt" field.
 func extractDt(senseObj map[string]any) string {
 	dtRaw, ok := senseObj["dt"]

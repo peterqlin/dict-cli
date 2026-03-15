@@ -53,7 +53,7 @@ func init() {
 		return err
 	}
 
-	rootCmd.AddCommand(defCmd, synCmd, antCmd)
+	rootCmd.AddCommand(defCmd, synCmd, antCmd, useCmd)
 }
 
 // resolveFormat returns the output format, with --json flag taking precedence.
