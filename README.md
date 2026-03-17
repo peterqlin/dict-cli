@@ -42,6 +42,7 @@ export MWEB_API_KEY_THESAURUS=your_thesaurus_key
 mweb def <word>   # define a word
 mweb syn <word>   # synonyms
 mweb ant <word>   # antonyms
+mweb use <word>   # example usage sentences
 ```
 
 ### Examples
@@ -74,6 +75,14 @@ Antonyms for "happy" (adjective):
   sad, unhappy, depressed, miserable
 ```
 
+```
+$ mweb use serendipity
+
+serendipity (noun):
+  1. a fortunate stroke of serendipity
+  2. a discovery made by serendipity
+```
+
 ### Flags
 
 | Flag     | Description                  |
@@ -93,7 +102,8 @@ dict_cli/
 │   ├── root.go       # Cobra root command, config loading, --json flag
 │   ├── def.go
 │   ├── syn.go
-│   └── ant.go
+│   ├── ant.go
+│   └── use.go
 └── internal/
     ├── api/
     │   ├── client.go      # HTTP client, two-pass JSON decode
